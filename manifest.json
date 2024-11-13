@@ -1,8 +1,8 @@
 {
-  "name": "variable-to-typescript",
-  "id": "1438607220467479740",
+  "name": "react-native-code",
+  "id": "1438168811560066006",
   "api": "1.0.0",
-  "main": "code.js",
+  "main": "dist/code.js",
   "capabilities": [
     "inspect"
   ],
