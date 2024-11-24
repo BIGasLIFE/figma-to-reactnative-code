@@ -1,4 +1,14 @@
-import { ComponentData, Padding } from "./types";
+import { ComponentData } from "./types";
+
+// 変数取得用の型と関数
+interface VariableReference {
+  id: string;
+  name?: string;
+}
+
+interface VariableBindings {
+  [key: string]: VariableReference;
+}
 
 // 型ガード関数の改善
 interface LayoutMixin {
@@ -10,6 +20,8 @@ interface LayoutMixin {
   paddingTop: number;
   paddingBottom: number;
   itemSpacing: number;
+  layoutSizingHorizontal: "FIXED" | "HUG" | "FILL";
+  layoutSizingVertical: "FIXED" | "HUG" | "FILL";
 }
 
 interface HasFillsMixin {
@@ -46,7 +58,38 @@ function isSolidPaint(paint: Paint): paint is SolidPaint {
   return paint.type === "SOLID";
 }
 
-export function parseNode(node: SceneNode): ComponentData {
+// 型ガード関数
+function hasVariableBindings(
+  node: SceneNode
+): node is SceneNode & { boundVariables: VariableBindings } {
+  return "boundVariables" in node;
+}
+
+async function getVariableName(
+  node: SceneNode,
+  property: string
+): Promise<string | undefined> {
+  if (hasVariableBindings(node) && node.boundVariables[property]) {
+    try {
+      const variableId = node.boundVariables[property].id;
+      const variable = await figma.variables.getVariableByIdAsync(variableId);
+
+      if (variable) {
+        const collection = await figma.variables.getVariableCollectionByIdAsync(
+          variable.variableCollectionId
+        );
+        if (collection) {
+          return `${collection.name}/${variable.name}`;
+        }
+      }
+    } catch (error) {
+      console.error(`Error getting variable name for ${property}:`, error);
+    }
+  }
+  return undefined;
+}
+
+export async function parseNode(node: SceneNode): Promise<ComponentData> {
   try {
     const baseProps: ComponentData = {
       name: node.name.trim(),
@@ -58,12 +101,24 @@ export function parseNode(node: SceneNode): ComponentData {
       baseProps.height = Math.round(node.height);
     }
 
+    // 高さの判定
+
+    if (node.type === "TEXT") {
+      baseProps.characters = node.characters;
+    }
+
     if (isLayoutNode(node)) {
+      // レイアウトの設定
       baseProps.layoutMode = node.layoutMode;
       baseProps.primaryAxisAlignItems = node.primaryAxisAlignItems;
       baseProps.counterAxisAlignItems = node.counterAxisAlignItems;
 
-      const padding: Padding = {};
+      // 幅の判定
+      baseProps.layoutSizingHorizontal = node.layoutSizingHorizontal;
+      baseProps.layoutSizingVertical = node.layoutSizingVertical;
+
+      // paddingの処理
+      const padding: ComponentData["padding"] = {};
 
       const hasHorizontalPadding =
         node.paddingLeft > 0 || node.paddingRight > 0;
@@ -72,15 +127,27 @@ export function parseNode(node: SceneNode): ComponentData {
 
       if (hasHorizontalPadding) {
         padding.horizontal = {
-          left: Math.round(node.paddingLeft),
-          right: Math.round(node.paddingRight),
+          left: {
+            value: Math.round(node.paddingLeft),
+            variableName: await getVariableName(node, "paddingLeft"),
+          },
+          right: {
+            value: Math.round(node.paddingRight),
+            variableName: await getVariableName(node, "paddingRight"),
+          },
         };
       }
 
       if (hasVerticalPadding) {
         padding.vertical = {
-          top: Math.round(node.paddingTop),
-          bottom: Math.round(node.paddingBottom),
+          top: {
+            value: Math.round(node.paddingTop),
+            variableName: await getVariableName(node, "paddingTop"),
+          },
+          bottom: {
+            value: Math.round(node.paddingBottom),
+            variableName: await getVariableName(node, "paddingBottom"),
+          },
         };
       }
 
@@ -89,7 +156,10 @@ export function parseNode(node: SceneNode): ComponentData {
       }
 
       if (node.itemSpacing > 0) {
-        baseProps.itemSpacing = Math.round(node.itemSpacing);
+        baseProps.itemSpacing = {
+          value: Math.round(node.itemSpacing),
+          variableName: await getVariableName(node, "itemSpacing"),
+        };
       }
     }
 
@@ -114,7 +184,15 @@ export function parseNode(node: SceneNode): ComponentData {
         .map((child) => parseNode(child));
 
       if (validChildren.length > 0) {
-        baseProps.children = validChildren;
+        const validChildren = await Promise.all(
+          node.children
+            .filter((child): child is SceneNode => !child.removed)
+            .map((child) => parseNode(child))
+        );
+
+        if (validChildren.length > 0) {
+          baseProps.children = validChildren;
+        }
       }
     }
 

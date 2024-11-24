@@ -1,3 +1,4 @@
+/// <reference types="@figma/plugin-typings" />
 export enum MessageType {
   NO_SELECTION = "no-selection",
   COMPONENT_DATA = "component-data",
@@ -23,24 +24,10 @@ export interface Padding {
   };
 }
 
-// FigmaのNodeType定義
-export type NodeType =
-  | "DOCUMENT"
-  | "PAGE"
-  | "FRAME"
-  | "GROUP"
-  | "COMPONENT"
-  | "COMPONENT_SET"
-  | "INSTANCE"
-  | "BOOLEAN_OPERATION"
-  | "VECTOR"
-  | "STAR"
-  | "LINE"
-  | "ELLIPSE"
-  | "POLYGON"
-  | "RECTANGLE"
-  | "TEXT";
-
+export interface VariableInfo {
+  value: number;
+  variableName?: string;
+}
 export interface ComponentData {
   name: string;
   type: NodeType;
@@ -49,8 +36,8 @@ export interface ComponentData {
   layoutMode?: "HORIZONTAL" | "VERTICAL";
   primaryAxisAlignItems?: "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN";
   counterAxisAlignItems?: "MIN" | "CENTER" | "MAX";
-  padding?: Padding;
-  itemSpacing?: number;
+  layoutSizingHorizontal?: "FIXED" | "HUG" | "FILL";
+  layoutSizingVertical?: "FIXED" | "HUG" | "FILL";
   backgroundColor?: Color;
   children?: ComponentData[];
   // テキストノード用のプロパティ
@@ -101,6 +88,18 @@ export interface ComponentData {
         bottomRight: number;
         bottomLeft: number;
       };
+  padding?: {
+    horizontal?: {
+      left: VariableInfo;
+      right: VariableInfo;
+    };
+    vertical?: {
+      top: VariableInfo;
+      bottom: VariableInfo;
+    };
+  };
+  itemSpacing?: VariableInfo;
+  flexGrow?: number;
 }
 
 export interface PluginMessage {

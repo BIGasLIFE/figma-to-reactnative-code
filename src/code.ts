@@ -2,11 +2,11 @@ import { MessageType, PluginMessage } from "./types";
 import { parseNode } from "./parser";
 import { CodeGenerator } from "./codeGenerator";
 
-figma.showUI(__html__, { width: 400, height: 500 });
+figma.showUI(__html__);
 
 const codeGenerator = new CodeGenerator();
 
-figma.on("selectionchange", () => {
+figma.on("selectionchange", async () => {
   const selection = figma.currentPage.selection;
   if (selection.length === 0) {
     figma.ui.postMessage({
@@ -17,7 +17,8 @@ figma.on("selectionchange", () => {
 
   const component = selection[0];
   try {
-    const componentData = parseNode(component);
+    const componentData = await parseNode(component);
+
     const generatedCode = codeGenerator.generateCode(componentData);
 
     figma.ui.postMessage({

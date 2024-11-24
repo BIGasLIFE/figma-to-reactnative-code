@@ -1,4 +1,4 @@
-import { ComponentData } from "./types";
+import { ComponentData, VariableInfo } from "./types";
 
 interface StyleProps {
   flex?: number;
@@ -8,28 +8,30 @@ interface StyleProps {
   flexDirection?: "row" | "column";
   alignItems?: "flex-start" | "center" | "flex-end" | "stretch";
   justifyContent?: "flex-start" | "center" | "flex-end" | "space-between";
-  padding?: number;
-  paddingTop?: number;
-  paddingRight?: number;
-  paddingBottom?: number;
-  paddingLeft?: number;
-  gap?: number;
+  padding?: number | string;
+  paddingTop?: number | string;
+  paddingRight?: number | string;
+  paddingBottom?: number | string;
+  paddingLeft?: number | string;
+  gap?: number | string;
   flexWrap?: "wrap" | "nowrap";
-  margin?: number;
-  marginTop?: number;
-  marginRight?: number;
-  marginBottom?: number;
-  marginLeft?: number;
+  flexGrow?: number;
+  margin?: number | string;
+  marginTop?: number | string;
+  marginRight?: number | string;
+  marginBottom?: number | string;
+  marginLeft?: number | string;
 }
 
-interface DimensionVariable {
-  name: string;
-  value: number;
-  variableName?: string;
-}
+// interface DimensionVariable {
+//   name: string;
+//   value: number;
+//   variableName?: string;
+// }
 
 export class CodeGenerator {
-  private variables: Set<DimensionVariable> = new Set();
+  // private variables: Set<DimensionVariable> = new Set();
+  private variableNames: Set<string> = new Set();
 
   private getElementType(nodeData: ComponentData): string {
     switch (nodeData.type) {
@@ -49,22 +51,22 @@ export class CodeGenerator {
     return node.type === "COMPONENT" || node.type === "INSTANCE";
   }
 
-  private formatVariableName(name: string): string {
-    return name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+  private generateVariableName(name: string): string {
+    const paths = name.split("/");
+    const firstPath = this.toLowerFirstChar(paths[0]);
+    const keyNamesText = paths
+      .splice(1)
+      .map((path) => `['${this.toLowerFirstChar(path)}']`);
+
+    return `${firstPath}${keyNamesText.join("")}`;
   }
 
-  private isDimensionVariable(value: number): {
-    isVariable: boolean;
-    name?: string;
-  } {
-    const commonDimensions = [16, 24, 32, 48, 64, 320, 360];
-    if (commonDimensions.includes(value)) {
-      return {
-        isVariable: true,
-        name: `dimension_${value}`,
-      };
+  private generateVariable(variableInfo: VariableInfo): number | string {
+    if (variableInfo.variableName !== undefined) {
+      return `##${this.generateVariableName(variableInfo.variableName)}##`;
+    } else {
+      return variableInfo.value;
     }
-    return { isVariable: false };
   }
 
   private convertToReactNativeStyle(
@@ -85,32 +87,27 @@ export class CodeGenerator {
     }
 
     // サイズの処理
-    if (nodeData.width) {
-      const widthVar = this.isDimensionVariable(nodeData.width);
-      if (widthVar.isVariable && widthVar.name) {
-        this.variables.add({
-          name: widthVar.name,
-          value: nodeData.width,
-        });
-        style.width = `dimensions.${widthVar.name}`;
-      } else if (nodeData.layoutMode) {
-        style.flex = 1;
-      } else {
+    switch (nodeData.layoutSizingHorizontal) {
+      case "FIXED":
         style.width = nodeData.width;
-      }
+        break;
+      case "FILL":
+        style.flexGrow = 1;
+        break;
+      case "HUG":
+      default:
+        break;
     }
-
-    if (nodeData.height) {
-      const heightVar = this.isDimensionVariable(nodeData.height);
-      if (heightVar.isVariable && heightVar.name) {
-        this.variables.add({
-          name: heightVar.name,
-          value: nodeData.height,
-        });
-        style.height = `dimensions.${heightVar.name}`;
-      } else {
+    switch (nodeData.layoutSizingVertical) {
+      case "FIXED":
         style.height = nodeData.height;
-      }
+        break;
+      case "FILL":
+        style.flexGrow = 1;
+        break;
+      case "HUG":
+      default:
+        break;
     }
 
     // 背景色の処理
@@ -133,6 +130,9 @@ export class CodeGenerator {
         case "MAX":
           style.alignItems = "flex-end";
           break;
+        default:
+          style.alignItems = "stretch";
+          break;
       }
 
       switch (nodeData.primaryAxisAlignItems) {
@@ -148,163 +148,39 @@ export class CodeGenerator {
         case "SPACE_BETWEEN":
           style.justifyContent = "space-between";
           break;
+        default:
+          style.justifyContent = "flex-start";
+          break;
       }
 
       // パディングの処理
       if (nodeData.padding) {
         if (nodeData.padding.horizontal) {
-          style.paddingLeft = nodeData.padding.horizontal.left;
-          style.paddingRight = nodeData.padding.horizontal.right;
+          style.paddingLeft = this.generateVariable(
+            nodeData.padding.horizontal.left
+          );
+          style.paddingRight = this.generateVariable(
+            nodeData.padding.horizontal.right
+          );
         }
         if (nodeData.padding.vertical) {
-          style.paddingTop = nodeData.padding.vertical.top;
-          style.paddingBottom = nodeData.padding.vertical.bottom;
+          style.paddingTop = this.generateVariable(
+            nodeData.padding.vertical.top
+          );
+          style.paddingBottom = this.generateVariable(
+            nodeData.padding.vertical.bottom
+          );
         }
       }
 
       // 間隔の処理
       if (nodeData.itemSpacing) {
-        style.gap = nodeData.itemSpacing;
+        style.gap = this.generateVariable(nodeData.itemSpacing);
       }
     }
 
     return style;
   }
-
-  // private generateComponentJSX(
-  //   node: ComponentData,
-  //   parentLayout?: string,
-  //   indent: string = ""
-  // ): string {
-  //   const elementType = this.getElementType(node);
-  //   const nodeName = node.name.replace(/\s+/g, "");
-
-  //   // スタイルの参照
-  //   const styleRef = `styles.${nodeName.toLowerCase()}`;
-
-  //   // 子要素の処理
-  //   let childrenJSX = "";
-  //   if (node.children && node.children.length > 0) {
-  //     childrenJSX = node.children
-  //       .map((child) => {
-  //         if (this.isComponent(child)) {
-  //           // コンポーネント化されているものはインポートして使用
-  //           const childName = child.name.replace(/\s+/g, "");
-  //           return `${indent}  <${childName} />`;
-  //         } else {
-  //           // コンポーネント化されていないものはインライン展開
-  //           return this.generateComponentJSX(
-  //             child,
-  //             node.layoutMode,
-  //             indent + "  "
-  //           );
-  //         }
-  //       })
-  //       .join("\n");
-  //   }
-
-  //   // テキスト要素の場合
-  //   if (elementType === "Text") {
-  //     return `${indent}<Text style={${styleRef}}>${
-  //       node.characters || ""
-  //     }</Text>`;
-  //   }
-
-  //   // 子要素がある場合とない場合で分岐
-  //   if (childrenJSX) {
-  //     return `${indent}<${elementType} style={${styleRef}}>\n${childrenJSX}\n${indent}</${elementType}>`;
-  //   } else {
-  //     return `${indent}<${elementType} style={${styleRef}} />`;
-  //   }
-  // }
-
-  //   private generateComponentCode(
-  //     componentData: ComponentData,
-  //     parentLayout?: string
-  //   ): string {
-  //     const componentName = componentData.name.replace(/\s+/g, "");
-
-  //     // インポートの収集
-  //     const imports = new Set([
-  //       "import React from 'react';",
-  //       `import { ${this.getElementType(componentData)} } from 'react-native';`,
-  //     ]);
-
-  //     // 子コンポーネントのインポート
-  //     if (componentData.children) {
-  //       componentData.children.forEach((child) => {
-  //         if (this.isComponent(child)) {
-  //           const childName = child.name.replace(/\s+/g, "");
-  //           imports.add(`import { ${childName} } from './${childName}';`);
-  //         } else {
-  //           imports.add(
-  //             `import { ${this.getElementType(child)} } from 'react-native';`
-  //           );
-  //         }
-  //       });
-  //     }
-
-  //     // 変数のインポート
-  //     if (this.variables.size > 0) {
-  //       imports.add("import { dimensions } from '../styles/dimensions';");
-  //     }
-
-  //     // コンポーネントコードの生成
-  //     return `${Array.from(imports).join("\n")}
-
-  // interface ${componentName}Props {
-  //   // TODO: Add props as needed
-  // }
-
-  // export const ${componentName}: React.FC<${componentName}Props> = () => {
-  //   return (
-  // ${this.generateComponentJSX(componentData, parentLayout, "    ")}
-  //   );
-  // };
-  // `;
-  //   }
-
-  // private generateImports(componentData: ComponentData): string[] {
-  //   const requiredComponents = new Set<string>([]);
-  //   const collectComponentTypes = (node: ComponentData) => {
-  //     requiredComponents.add(this.getElementType(node));
-  //     if (node.children) {
-  //       node.children.forEach(collectComponentTypes);
-  //     }
-  //   };
-  //   collectComponentTypes(componentData);
-
-  //   const imports = [
-  //     "import React from 'react';",
-  //     `import { ${Array.from(requiredComponents).join(
-  //       ", "
-  //     )}, StyleSheet } from 'react-native';`,
-  //   ];
-
-  //   if (this.variables.size > 0) {
-  //     imports.push("import { dimensions } from '../styles/dimensions';");
-  //   }
-
-  //   return imports;
-  // }
-
-  //   private generateDimensionsFile(): string {
-  //     if (this.variables.size === 0) return "";
-
-  //     const variables = Array.from(this.variables).reduce(
-  //       (acc, { name, value }) => {
-  //         acc[name] = value;
-  //         return acc;
-  //       },
-  //       {} as Record<string, number>
-  //     );
-
-  //     return `// Auto-generated dimension variables from Figma
-  // export const dimensions = ${JSON.stringify(variables, null, 2)
-  //       .replace(/"([^"]+)":/g, "$1:")
-  //       .replace(/"/g, "'")};
-  // `;
-  //   }
 
   private getAllStyles(
     componentData: ComponentData,
@@ -330,90 +206,8 @@ export class CodeGenerator {
     return styles;
   }
 
-  //   public generateCode(componentData: ComponentData): string {
-  //     this.variables.clear();
-  //     const componentName = componentData.name.replace(/\s+/g, "");
-
-  //     // インポートの収集
-  //     const imports = new Set([
-  //       "import React from 'react';",
-  //       `import { ${this.getElementType(
-  //         componentData
-  //       )}, StyleSheet } from 'react-native';`,
-  //     ]);
-
-  //     // 子コンポーネントのインポート
-  //     if (componentData.children) {
-  //       componentData.children.forEach((child) => {
-  //         if (this.isComponent(child)) {
-  //           const childName = child.name.replace(/\s+/g, "");
-  //           imports.add(`import { ${childName} } from './${childName}';`);
-  //         } else {
-  //           const elementType = this.getElementType(child);
-  //           if (!imports.has(`'react-native'`)) {
-  //             imports.add(`import { ${elementType} } from 'react-native';`);
-  //           }
-  //         }
-  //       });
-  //     }
-
-  //     // 変数のインポート（存在する場合）
-  //     if (this.variables.size > 0) {
-  //       imports.add("import { dimensions } from '../styles/dimensions';");
-  //     }
-
-  //     // コンポーネントコード生成
-  //     const componentJSX = this.generateComponentJSX(componentData);
-
-  //     // スタイル生成
-  //     const styles = this.getAllStyles(componentData);
-  //     const styleSheet = `\nconst styles = StyleSheet.create(${JSON.stringify(
-  //       styles,
-  //       null,
-  //       2
-  //     )
-  //       .replace(/"([^"]+)":/g, "$1:")
-  //       .replace(/"/g, "'")});`;
-
-  //     // 最終的なコードを組み立て
-  //     return `${Array.from(imports).join("\n")}
-
-  // interface ${componentName}Props {
-  //   // TODO: Add props as needed
-  // }
-
-  // export const ${componentName}: React.FC<${componentName}Props> = () => {
-  //   return (
-  // ${componentJSX}
-  //   );
-  // };
-  // ${styleSheet}
-  // `;
-  //   }
-
-  private generateComponentProps(componentData: ComponentData): string[] {
-    const props: string[] = [];
-
-    // Figmaの設定に基づいてpropsを生成
-    if (componentData.type === "TEXT") {
-      props.push("text?: string");
-    }
-
-    if ("opacity" in componentData) {
-      props.push("opacity?: number");
-    }
-
-    // インスタンスの場合、コンポーネントのプロパティを反映
-    if (componentData.type === "INSTANCE") {
-      // プロパティの設定があれば反映
-      // overriddenProperties などを使用
-    }
-
-    // デフォルトのprops
-    props.push("style?: StyleProp<ViewStyle>");
-    props.push("children?: React.ReactNode");
-
-    return props;
+  private toLowerFirstChar(text: string): string {
+    return text.charAt(0).toLowerCase() + text.slice(1);
   }
 
   private generateComponentJSX(
@@ -422,14 +216,11 @@ export class CodeGenerator {
   ): string {
     const elementType = this.getElementType(node);
     const nodeName = node.name.replace(/\s+/g, "");
-    const styleRef = `styles.${nodeName.toLowerCase()}`;
+    const styleRef = `styles.${this.toLowerFirstChar(nodeName)}`;
 
     let props = `style={${styleRef}}`;
 
     // コンポーネント固有のpropsを追加
-    if (elementType === "Text" && node.characters) {
-      props += ` numberOfLines={1}`; // テキストが設定されている場合の例
-    }
     if ("opacity" in node) {
       props += ` opacity={${node.opacity}}`;
     }
@@ -464,8 +255,97 @@ export class CodeGenerator {
     }
   }
 
+  private generateStyleSheet(componentData: ComponentData): string {
+    const children = this.getComponentChildren(componentData);
+    const components = [componentData, ...children].filter(
+      (component) => !this.isComponent(component) && component.type !== "TEXT"
+    );
+
+    const componentStyleSheets = components.reduce<Record<string, object>>(
+      (acc, component) => {
+        const style = this.convertToReactNativeStyle(component);
+        const key = this.toLowerFirstChar(component.name);
+        acc[key] = style;
+        return acc;
+      },
+      {}
+    );
+
+    return `\nconst styles = StyleSheet.create(${JSON.stringify(
+      componentStyleSheets,
+      null,
+      2
+    ).replace(/"##(.*?)##"/g, "$1")});`;
+  }
+
+  private getComponentChildren(component: ComponentData): Array<ComponentData> {
+    const components: Array<ComponentData> = [];
+    component.children?.forEach((child) => {
+      components.push(child);
+      // "DOCUMENT" | "PAGE" | "SLICE" | "FRAME" | "GROUP"
+      if (
+        child.type === "PAGE" ||
+        child.type === "DOCUMENT" ||
+        child.type === "FRAME" ||
+        child.type === "GROUP" ||
+        child.type === "SLICE"
+      ) {
+        components.push(...this.getComponentChildren(child));
+      }
+    });
+
+    return components;
+  }
+
+  private getVariableNames(componentData: ComponentData): string[] {
+    const variables: Set<string> = new Set();
+    const getFirstPath = (name: string): string => {
+      return this.toLowerFirstChar(name.split("/")[0]);
+    };
+
+    if (componentData.padding !== undefined) {
+      if (componentData.padding.horizontal !== undefined) {
+        if (componentData.padding.horizontal.left.variableName !== undefined) {
+          variables.add(
+            getFirstPath(componentData.padding.horizontal.left.variableName)
+          );
+        }
+        if (componentData.padding.horizontal.right.variableName !== undefined) {
+          variables.add(
+            getFirstPath(componentData.padding.horizontal.right.variableName)
+          );
+        }
+      }
+      if (componentData.padding.vertical !== undefined) {
+        if (componentData.padding.vertical.top.variableName !== undefined) {
+          variables.add(
+            getFirstPath(componentData.padding.vertical.top.variableName)
+          );
+        }
+        if (componentData.padding.vertical.bottom.variableName !== undefined) {
+          variables.add(
+            getFirstPath(componentData.padding.vertical.bottom.variableName)
+          );
+        }
+      }
+    }
+    if (componentData.itemSpacing !== undefined) {
+      if (componentData.itemSpacing.variableName !== undefined) {
+        variables.add(getFirstPath(componentData.itemSpacing.variableName));
+      }
+    }
+
+    const children = this.getComponentChildren(componentData);
+    children.forEach((child) => {
+      this.getVariableNames(child).forEach((variableName) => {
+        variables.add(variableName);
+      });
+    });
+
+    return Array.from(variables);
+  }
+
   public generateCode(componentData: ComponentData): string {
-    this.variables.clear();
     const componentName = componentData.name.replace(/\s+/g, "");
 
     // インポートの収集
@@ -473,40 +353,26 @@ export class CodeGenerator {
       "import React from 'react';",
       `import { ${this.getElementType(
         componentData
-      )}, StyleSheet, StyleProp, ViewStyle } from 'react-native';`,
+      )}, StyleSheet } from 'react-native';`,
     ]);
 
     // 必要なコンポーネントのインポート
-    if (componentData.children) {
-      componentData.children.forEach((child) => {
-        if (this.isComponent(child)) {
-          const childName = child.name.replace(/\s+/g, "");
-          imports.add(`import { ${childName} } from './${childName}';`);
-        } else {
-          const elementType = this.getElementType(child);
-          if (!imports.has(`'react-native'`)) {
-            imports.add(`import { ${elementType} } from 'react-native';`);
-          }
-        }
-      });
-    }
+    const children = this.getComponentChildren(componentData);
+    children.forEach((child) => {
+      if (this.isComponent(child)) {
+        const childName = child.name.replace(/\s+/g, "");
+        imports.add(`import { ${childName} } from './${childName}';`);
+      }
+    });
 
-    // 変数のインポート
-    if (this.variables.size > 0) {
-      imports.add("import { dimensions } from '../styles/dimensions';");
-    }
-
-    // このコンポーネントのスタイルのみを生成
-    const style = this.convertToReactNativeStyle(componentData);
-    const styleSheet = `\nconst styles = StyleSheet.create({
-  ${componentName.toLowerCase()}: ${JSON.stringify(style, null, 2)
-      .replace(/"([^"]+)":/g, "$1:")
-      .replace(/"/g, "'")}
-});`;
+    // import variables
+    this.getVariableNames(componentData).forEach((variableName) => {
+      imports.add(`import { ${variableName} } from './${variableName}';`);
+    });
 
     // propsインターフェースの生成
-    const propsInterface = `interface ${componentName}Props {
-  ${this.generateComponentProps(componentData).join(";\n  ")};
+    const propsInterface = `type ${componentName}Props {
+  // define props here
 }`;
 
     return `${Array.from(imports).join("\n")}
@@ -514,15 +380,13 @@ export class CodeGenerator {
 ${propsInterface}
 
 export const ${componentName}: React.FC<${componentName}Props> = ({
-  style,
-  children,
-  ...props
+  // define props here
 }) => {
   return (
 ${this.generateComponentJSX(componentData, "    ")}
   );
 };
-${styleSheet}
+${this.generateStyleSheet(componentData)}
 `;
   }
 }
