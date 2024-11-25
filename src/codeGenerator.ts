@@ -218,12 +218,7 @@ export class CodeGenerator {
     const nodeName = node.name.replace(/\s+/g, "");
     const styleRef = `styles.${this.toLowerFirstChar(nodeName)}`;
 
-    let props = `style={${styleRef}}`;
-
-    // コンポーネント固有のpropsを追加
-    if ("opacity" in node) {
-      props += ` opacity={${node.opacity}}`;
-    }
+    const props = `style={${styleRef}}`;
 
     // 子要素の処理
     let childrenJSX = "";
@@ -244,7 +239,7 @@ export class CodeGenerator {
 
     // テキスト要素の特別処理
     if (elementType === "Text") {
-      return `${indent}<Text ${props}>${node.characters || ""}</Text>`;
+      return `${indent}<Text>${node.characters || ""}</Text>`;
     }
 
     // 子要素の有無で出力を分岐
@@ -256,10 +251,10 @@ export class CodeGenerator {
   }
 
   private generateStyleSheet(componentData: ComponentData): string {
-    const children = this.getComponentChildren(componentData);
-    const components = [componentData, ...children].filter(
+    const children = this.getComponentChildren(componentData).filter(
       (component) => !this.isComponent(component) && component.type !== "TEXT"
     );
+    const components = [componentData, ...children];
 
     const componentStyleSheets = components.reduce<Record<string, object>>(
       (acc, component) => {
